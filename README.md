@@ -1,75 +1,53 @@
-# React + TypeScript + Vite
+# Loci
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A suite of geometry games built with React + Vite.
 
-Currently, two official plugins are available:
+## Dev
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm dev        # start dev server at http://localhost:5173
+pnpm build      # type-check + production build
+pnpm lint       # eslint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Visual testing (for Claude)
+
+A Playwright screenshot script is used to visually verify UI changes. The dev server must be running first.
+
+```bash
+# Landing page
+node scripts/screenshot.mjs
+
+# Navigate into a game
+node scripts/screenshot.mjs "click:text=Constellations"
+
+# Navigate in, then back
+node scripts/screenshot.mjs "click:text=Ripples" back
+
+# With an explicit wait
+node scripts/screenshot.mjs "click:text=Shape Builder" "wait:500"
+```
+
+**Step syntax:**
+
+| Step | Effect |
+|------|--------|
+| `click:text=Foo` | Click element by visible text |
+| `click:.selector` | Click by CSS selector |
+| `wait:500` | Wait 500 ms |
+| `back` | Click the GameShell back button |
+
+Screenshots are saved to `/tmp/loci-screenshots/` as `shot-00-initial.png`, `shot-01-…`, etc. Read them with the `Read` tool — it renders PNGs inline.
+
+**Debugging computed styles:**
 
 ```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+// Run inline with node -e or in scripts/screenshot.mjs before browser.close()
+const styles = await page.locator('h1').evaluate(el => {
+  const cs = getComputedStyle(el);
+  return { fontSize: cs.fontSize, lineHeight: cs.lineHeight };
+});
+console.log(styles);
 ```
+
+**Known gotcha:** `font: <size>/<line-height>` set as a percentage on `:root` computes to a fixed pixel value that inherits to all descendants. Always set `line-height` explicitly (unitless) on headings so it stays proportional to the element's own font-size.
