@@ -1,40 +1,64 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 // ── Config ────────────────────────────────────────────────
 
-const STAR_R = 5          // visual radius (px)
-const HIT_R = 16          // tap target radius (px)
-const SEL_RING = 10       // selected ring radius
-const SCALE_MIN = 0.08    // shape radius as fraction of min(w, h)
-const SCALE_MAX = 0.17
-const MARGIN = 0.12       // normalized keep-away from edges
-const SHAPE_COLORS = ['#4adecd', '#a78bfa', '#fbbf24', '#f87171', '#34d399']
+const STAR_R = 5          // base visual radius (px)
+const HIT_R = 20          // tap/touch hit radius (px)
+const SEL_RING = 11
+const MARGIN = 0.11
+const SHAPE_COLORS = ['#4adecd', '#a78bfa', '#fbbf24', '#f87171', '#34d399', '#60a5fa']
 const SKY = '#06091a'
-
-const LEVELS: LevelDef[] = [
-  { shapes: [{ sides: 3 }, { sides: 3 }],                                 noise: 45 },
-  { shapes: [{ sides: 3 }, { sides: 4 }],                                 noise: 55 },
-  { shapes: [{ sides: 3 }, { sides: 4 }, { sides: 5 }],                   noise: 70 },
-  { shapes: [{ sides: 3 }, { sides: 4 }, { sides: 5 }, { sides: 6 }],     noise: 85 },
-]
-
-const SHAPE_NAMES: Record<number, string> = {
-  3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon',
-}
 
 // ── Types ─────────────────────────────────────────────────
 
 interface LevelDef {
   shapes: { sides: number }[]
   noise: number
+  scaleMin: number      // shape radius as fraction of min(w,h)
+  scaleMax: number
+  starBaseMin: number   // per-shape star size multiplier range
+  starBaseMax: number
+  noiseRMult: [number, number]  // [min, max] for noise star rMult
+}
+
+function lev(
+  sides: number[],
+  noise: number,
+  scaleMin: number, scaleMax: number,
+  starBaseMin: number, starBaseMax: number,
+  noiseRMult: [number, number],
+): LevelDef {
+  return { shapes: sides.map(s => ({ sides: s })), noise, scaleMin, scaleMax, starBaseMin, starBaseMax, noiseRMult }
+}
+
+//           sides             noise  scale         starBase      noiseRMult
+const LEVELS: LevelDef[] = [
+  // ── Triangles ──────────────────────────────────────────
+  lev([3,3],         40,  0.10,0.14,  1.0,1.0,  [0.4,0.7]),
+  lev([3,3,3],       55,  0.09,0.16,  0.9,1.1,  [0.3,0.85]),
+  lev([3,3,3,3],     65,  0.07,0.19,  0.7,1.3,  [0.2,1.0]),
+  // ── Squares ────────────────────────────────────────────
+  lev([4,4],         45,  0.10,0.14,  1.0,1.0,  [0.4,0.7]),
+  lev([4,4,4],       60,  0.09,0.16,  0.9,1.1,  [0.3,0.85]),
+  lev([4,4,4,4],     75,  0.07,0.19,  0.7,1.3,  [0.2,1.0]),
+  // ── Pentagons ──────────────────────────────────────────
+  lev([5,5,5],       65,  0.09,0.17,  0.9,1.1,  [0.3,0.85]),
+  lev([5,5,5,5],     80,  0.07,0.20,  0.7,1.4,  [0.2,1.1]),
+  // ── Mixed ──────────────────────────────────────────────
+  lev([3,3,4,4,5],   85,  0.07,0.20,  0.7,1.3,  [0.2,1.1]),
+  lev([3,3,4,4,5,6], 95,  0.06,0.22,  0.6,1.5,  [0.15,1.2]),
+]
+
+const SHAPE_NAMES: Record<number, string> = {
+  3: 'triangle', 4: 'square', 5: 'pentagon', 6: 'hexagon',
 }
 
 interface Star {
   id: number
-  nx: number     // normalized 0-1
+  nx: number          // 0-1 normalized
   ny: number
-  rMult: number  // size variation factor
-  twinkleDelay: number  // css animation-delay in seconds
+  rMult: number       // applied on top of shape's starBase (or 1.0 for noise)
+  twinkleDelay: number
 }
 
 interface Shape {
@@ -42,6 +66,7 @@ interface Shape {
   sides: number
   starIds: number[]
   color: string
+  starBase: number    // per-shape star size multiplier
   ncx: number
   ncy: number
   nRadius: number
@@ -52,7 +77,7 @@ interface LevelState {
   stars: Star[]
   shapes: Shape[]
   selected: Set<number>
-  solved: Set<number>  // shape ids
+  solved: Set<number>
 }
 
 // ── Seeded RNG ────────────────────────────────────────────
@@ -80,33 +105,34 @@ function buildLevel(def: LevelDef, w: number, h: number, levelIdx: number): Leve
   let nextId = 0
 
   const shapes: Shape[] = []
-  const cStars: Star[] = []  // constellation stars
+  const cStars: Star[] = []
 
   for (let si = 0; si < def.shapes.length; si++) {
     const { sides } = def.shapes[si]
 
-    for (let attempt = 0; attempt < 200; attempt++) {
-      const nRadius = SCALE_MIN + rng() * (SCALE_MAX - SCALE_MIN)
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const nRadius = def.scaleMin + rng() * (def.scaleMax - def.scaleMin)
       const rPx = nRadius * minDim
       const ncx = MARGIN + rng() * (1 - 2 * MARGIN)
       const ncy = MARGIN + rng() * (1 - 2 * MARGIN)
       const rotation = rng() * Math.PI * 2
 
-      // Check vertices stay in canvas (5% inset)
       const verts = polyVerts(ncx * w, ncy * h, rPx, sides, rotation)
       const inBounds = verts.every(v =>
-        v.x >= w * 0.05 && v.x <= w * 0.95 &&
-        v.y >= h * 0.05 && v.y <= h * 0.95
+        v.x >= w * 0.04 && v.x <= w * 0.96 &&
+        v.y >= h * 0.04 && v.y <= h * 0.96
       )
       if (!inBounds) continue
 
-      // No overlap with existing shapes
       const overlaps = shapes.some(s => {
         const dx = (ncx - s.ncx) * w
         const dy = (ncy - s.ncy) * h
-        return Math.hypot(dx, dy) < (nRadius + s.nRadius) * minDim * 1.3
+        return Math.hypot(dx, dy) < (nRadius + s.nRadius) * minDim * 1.2
       })
       if (overlaps) continue
+
+      // Per-shape star size: bigger shapes get slightly bigger stars
+      const starBase = def.starBaseMin + rng() * (def.starBaseMax - def.starBaseMin)
 
       const starIds: number[] = []
       for (const v of verts) {
@@ -114,8 +140,8 @@ function buildLevel(def: LevelDef, w: number, h: number, levelIdx: number): Leve
           id: nextId++,
           nx: v.x / w,
           ny: v.y / h,
-          rMult: 0.9 + rng() * 0.5,
-          twinkleDelay: rng() * -4,
+          rMult: 0.82 + rng() * 0.36,   // tight variation ±18% around starBase
+          twinkleDelay: rng() * -5,
         }
         cStars.push(star)
         starIds.push(star.id)
@@ -126,35 +152,34 @@ function buildLevel(def: LevelDef, w: number, h: number, levelIdx: number): Leve
         sides,
         starIds,
         color: SHAPE_COLORS[si % SHAPE_COLORS.length],
-        ncx,
-        ncy,
-        nRadius,
-        rotation,
+        starBase,
+        ncx, ncy, nRadius, rotation,
       })
       break
     }
   }
 
-  // Noise stars – avoid being too close to constellation stars
+  // Noise stars
+  const [nMin, nMax] = def.noiseRMult
   const noiseStars: Star[] = []
   for (let i = 0; i < def.noise; i++) {
     let nx = 0, ny = 0
     for (let att = 0; att < 30; att++) {
       nx = 0.03 + rng() * 0.94
       ny = 0.03 + rng() * 0.94
-      const tooClose = cStars.some(s => Math.hypot((nx - s.nx) * w, (ny - s.ny) * h) < STAR_R * 3)
+      const tooClose = cStars.some(s =>
+        Math.hypot((nx - s.nx) * w, (ny - s.ny) * h) < STAR_R * 2.5
+      )
       if (!tooClose) break
     }
     noiseStars.push({
       id: nextId++,
-      nx,
-      ny,
-      rMult: 0.3 + rng() * 0.65,
-      twinkleDelay: rng() * -4,
+      nx, ny,
+      rMult: nMin + rng() * (nMax - nMin),
+      twinkleDelay: rng() * -5,
     })
   }
 
-  // Shuffle combined star array so constellation stars aren't identifiable by z-order
   const allStars = [...cStars, ...noiseStars]
   for (let i = allStars.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1))
@@ -168,10 +193,7 @@ function buildLevel(def: LevelDef, w: number, h: number, levelIdx: number): Leve
 
 function BankShape({ shape, solved }: { shape: Shape; solved: boolean }) {
   const size = 44
-  const cx = size / 2
-  const cy = size / 2
-  const r = size * 0.36
-  // Canonical upright: offset rotation so a vertex points up
+  const cx = size / 2, cy = size / 2, r = size * 0.36
   const rot = -Math.PI / 2 + (shape.sides % 2 === 0 ? Math.PI / shape.sides : 0)
   const pts = polyVerts(cx, cy, r, shape.sides, rot)
   const pointsStr = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
@@ -179,8 +201,7 @@ function BankShape({ shape, solved }: { shape: Shape; solved: boolean }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
       <svg
-        width={size}
-        height={size}
+        width={size} height={size}
         viewBox={`0 0 ${size} ${size}`}
         aria-label={`${solved ? 'Solved' : 'Find a'} ${SHAPE_NAMES[shape.sides] ?? `${shape.sides}-gon`}`}
         style={{ overflow: 'visible' }}
@@ -211,12 +232,10 @@ function BankShape({ shape, solved }: { shape: Shape; solved: boolean }) {
 
 // ── Solved shape overlay ──────────────────────────────────
 
-function SolvedFill({ shape, stars, w, h }: {
-  shape: Shape; stars: Star[]; w: number; h: number
-}) {
-  const shapeStarMap = new Map(stars.map(s => [s.id, s]))
+function SolvedFill({ shape, stars, w, h }: { shape: Shape; stars: Star[]; w: number; h: number }) {
+  const starMap = new Map(stars.map(s => [s.id, s]))
   const pts = shape.starIds
-    .map(id => shapeStarMap.get(id))
+    .map(id => starMap.get(id))
     .filter(Boolean)
     .map(s => `${(s!.nx * w).toFixed(1)},${(s!.ny * h).toFixed(1)}`)
     .join(' ')
@@ -241,54 +260,59 @@ export default function Constellations() {
   const [complete, setComplete] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
 
-  // Track SVG pixel dimensions
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
     const obs = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect
-      if (width > 0 && height > 0) {
-        setSvgSize({ w: width, h: height })
-      }
+      if (width > 0 && height > 0) setSvgSize({ w: width, h: height })
     })
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
 
-  // Build / rebuild level
   useEffect(() => {
     if (svgSize.w === 0 || svgSize.h === 0) return
     setComplete(false)
     setGame(buildLevel(
       LEVELS[Math.min(levelIdx, LEVELS.length - 1)],
-      svgSize.w,
-      svgSize.h,
-      levelIdx,
+      svgSize.w, svgSize.h, levelIdx,
     ))
   }, [svgSize, levelIdx])
 
-  const handleStarDown = useCallback((id: number, e: React.PointerEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setGame(prev => {
-      if (!prev) return prev
+  const { w, h } = svgSize
 
-      // Ignore stars that belong to solved shapes
+  // Hit-test on the SVG itself — works reliably on all mobile browsers
+  const handleSvgPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    e.preventDefault()
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+    const px = e.clientX - rect.left
+    const py = e.clientY - rect.top
+
+    setGame(prev => {
+      if (!prev || w === 0 || h === 0) return prev
+
       const solvedStarIds = new Set(
-        prev.shapes
-          .filter(s => prev.solved.has(s.id))
-          .flatMap(s => s.starIds)
+        prev.shapes.filter(s => prev.solved.has(s.id)).flatMap(s => s.starIds)
       )
-      if (solvedStarIds.has(id)) return prev
+
+      // Find nearest unsolved star within HIT_R
+      let bestId = -1, bestDist = HIT_R
+      for (const star of prev.stars) {
+        if (solvedStarIds.has(star.id)) continue
+        const d = Math.hypot(star.nx * w - px, star.ny * h - py)
+        if (d < bestDist) { bestDist = d; bestId = star.id }
+      }
+      if (bestId === -1) return prev
 
       const sel = new Set(prev.selected)
-      if (sel.has(id)) {
-        sel.delete(id)
+      if (sel.has(bestId)) {
+        sel.delete(bestId)
         return { ...prev, selected: sel }
       }
-      sel.add(id)
+      sel.add(bestId)
 
-      // Check for match against every unsolved shape
+      // Check for match
       const unsolved = prev.shapes.filter(s => !prev.solved.has(s.id))
       for (const shape of unsolved) {
         if (sel.size !== shape.starIds.length) continue
@@ -300,15 +324,14 @@ export default function Constellations() {
         }
       }
 
-      // If selection is larger than any unsolved shape, clear it
+      // Overflow: more selected than any remaining shape
       const maxSize = Math.max(...unsolved.map(s => s.starIds.length), 0)
       if (sel.size > maxSize) return { ...prev, selected: new Set() }
 
       return { ...prev, selected: sel }
     })
-  }, [])
+  }, [w, h])
 
-  // Watch for level completion
   useEffect(() => {
     if (!game) return
     if (game.shapes.length > 0 && game.solved.size === game.shapes.length) {
@@ -317,138 +340,114 @@ export default function Constellations() {
     }
   }, [game])
 
-  const { w, h } = svgSize
-  const solvedStarIds = game
-    ? new Set(game.shapes.filter(s => game.solved.has(s.id)).flatMap(s => s.starIds))
-    : new Set<number>()
-
-  const getStarColor = (star: Star) => {
-    if (!game) return '#fff'
+  // Precompute star → shape mapping (used for visual radius + color in render)
+  const starToShape = useMemo(() => {
+    const m = new Map<number, Shape>()
+    if (!game) return m
     for (const shape of game.shapes) {
-      if (game.solved.has(shape.id) && shape.starIds.includes(star.id)) {
-        return shape.color
-      }
+      for (const id of shape.starIds) m.set(id, shape)
     }
-    return '#fff'
-  }
+    return m
+  }, [game])
+
+  const solvedStarIds = useMemo(() =>
+    game
+      ? new Set(game.shapes.filter(s => game.solved.has(s.id)).flatMap(s => s.starIds))
+      : new Set<number>(),
+    [game]
+  )
 
   return (
     <div style={{
-      width: '100%',
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      background: SKY,
-      overflow: 'hidden',
-      userSelect: 'none',
+      width: '100%', height: '100%',
+      display: 'flex', flexDirection: 'column',
+      background: SKY, overflow: 'hidden', userSelect: 'none',
     }}>
-      {/* Sky canvas */}
       <svg
         ref={svgRef}
-        style={{ flex: 1, display: 'block', touchAction: 'none' }}
+        style={{ flex: 1, display: 'block', touchAction: 'none', cursor: 'crosshair' }}
+        onPointerDown={handleSvgPointerDown}
         aria-label="Constellation field"
       >
         <style>{`
           @keyframes twinkle {
             0%, 100% { opacity: 1; }
-            50%       { opacity: 0.35; }
+            50%       { opacity: 0.3; }
           }
-          .star-vis {
-            animation: twinkle 3s ease-in-out infinite;
-          }
+          .star-vis { animation: twinkle 3s ease-in-out infinite; }
         `}</style>
 
-        {/* Solved shape fills */}
         {game?.shapes.filter(s => game.solved.has(s.id)).map(shape => (
           <SolvedFill key={shape.id} shape={shape} stars={game.stars} w={w} h={h} />
         ))}
 
-        {/* Stars */}
-        {game?.stars.map(star => {
-          const px = star.nx * w
-          const py = star.ny * h
-          const isSel = game.selected.has(star.id)
-          const isSolved = solvedStarIds.has(star.id)
-          const color = getStarColor(star)
-          const vr = STAR_R * star.rMult
-
-          return (
-            <g key={star.id}>
-              {/* Selection ring */}
-              {isSel && (
-                <circle
-                  cx={px} cy={py} r={SEL_RING}
-                  fill="none"
-                  stroke="rgba(255,220,80,0.7)"
-                  strokeWidth={1.5}
-                  style={{ pointerEvents: 'none' }}
-                />
-              )}
-              {/* Visual star */}
-              <circle
-                className="star-vis"
-                cx={px}
-                cy={py}
-                r={isSolved ? vr * 1.2 : vr}
-                fill={isSel ? 'rgba(255,220,80,0.95)' : (isSolved ? color : 'rgba(255,255,255,0.88)')}
-                style={{
-                  animationDelay: `${star.twinkleDelay}s`,
-                  filter: isSel
-                    ? 'drop-shadow(0 0 4px rgba(255,220,80,0.9))'
-                    : isSolved
-                      ? `drop-shadow(0 0 3px ${color}aa)`
-                      : undefined,
-                  pointerEvents: 'none',
-                }}
-              />
-              {/* Hit target */}
-              {!isSolved && (
-                <circle
-                  cx={px}
-                  cy={py}
-                  r={HIT_R}
-                  fill="rgba(0,0,0,0)"
-                  style={{ cursor: 'pointer' }}
-                  onPointerDown={e => handleStarDown(star.id, e)}
-                />
-              )}
-            </g>
-          )
-        })}
-
-        {/* Connection lines for selected stars when count approaches a shape size */}
+        {/* Selection lines */}
         {game && game.selected.size >= 2 && (() => {
           const selArr = [...game.selected]
-            .map(id => game.stars.find(s => s.id === id))
-            .filter(Boolean) as Star[]
+            .map(id => game.stars.find(s => s.id === id)!)
+            .filter(Boolean)
           return selArr.map((s, i) => {
             if (i === 0) return null
             const prev = selArr[i - 1]
             return (
-              <line
-                key={i}
+              <line key={i}
                 x1={prev.nx * w} y1={prev.ny * h}
                 x2={s.nx * w} y2={s.ny * h}
-                stroke="rgba(255,220,80,0.3)"
-                strokeWidth={1}
+                stroke="rgba(255,220,80,0.25)" strokeWidth={1}
                 style={{ pointerEvents: 'none' }}
               />
             )
           })
         })()}
+
+        {game?.stars.map(star => {
+          const px = star.nx * w
+          const py = star.ny * h
+          const isSel = game.selected.has(star.id)
+          const isSolved = solvedStarIds.has(star.id)
+
+          // All constellation stars use their shape's starBase; noise stars use base 1.0
+          const shape = starToShape.get(star.id)
+          const visualR = STAR_R * (shape ? shape.starBase : 1.0) * star.rMult
+          const color = (isSolved && shape) ? shape.color : '#fff'
+          const fillColor = isSel
+            ? 'rgba(255,220,80,0.95)'
+            : isSolved ? color : 'rgba(255,255,255,0.88)'
+
+          return (
+            <g key={star.id} style={{ pointerEvents: 'none' }}>
+              {isSel && (
+                <circle cx={px} cy={py} r={SEL_RING}
+                  fill="none" stroke="rgba(255,220,80,0.65)" strokeWidth={1.5}
+                />
+              )}
+              <circle
+                className="star-vis"
+                cx={px} cy={py}
+                r={isSolved ? visualR * 1.15 : visualR}
+                fill={fillColor}
+                style={{
+                  animationDelay: `${star.twinkleDelay}s`,
+                  filter: isSel
+                    ? 'drop-shadow(0 0 4px rgba(255,220,80,0.85))'
+                    : isSolved
+                      ? `drop-shadow(0 0 3px ${color}99)`
+                      : undefined,
+                }}
+              />
+            </g>
+          )
+        })}
       </svg>
 
       {/* Shape bank */}
       <div style={{
-        flexShrink: 0,
-        height: 80,
+        flexShrink: 0, height: 80,
         borderTop: '1px solid rgba(255,255,255,0.07)',
-        background: 'rgba(6,9,26,0.92)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 28,
-        padding: '0 20px',
+        background: 'rgba(6,9,26,0.94)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 24, padding: '0 16px',
+        overflowX: 'auto',
       }}>
         {game?.shapes.map(shape => (
           <BankShape key={shape.id} shape={shape} solved={game.solved.has(shape.id)} />
@@ -457,65 +456,49 @@ export default function Constellations() {
 
       {/* Level complete overlay */}
       {complete && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(6,9,26,0.85)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 24,
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div style={{ fontSize: 13, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)' }}>
-            {levelIdx >= LEVELS.length - 1 ? 'All constellations found' : `Level ${levelIdx + 1} complete`}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'rgba(6,9,26,0.85)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          gap: 24, backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            fontSize: 11, letterSpacing: '0.22em',
+            textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)',
+          }}>
+            {levelIdx >= LEVELS.length - 1
+              ? 'All constellations charted'
+              : `Level ${levelIdx + 1} of ${LEVELS.length}`}
           </div>
-          <div style={{ fontSize: 32, color: '#fff', fontWeight: 500 }}>
-            {levelIdx >= LEVELS.length - 1 ? '✦' : ''}
+          <div style={{ display: 'flex', gap: 8 }}>
             {game?.shapes.map((s, i) => (
-              <span key={i} style={{ color: s.color, marginRight: 4 }}>✦</span>
+              <span key={i} style={{ fontSize: 28, color: s.color }}>✦</span>
             ))}
           </div>
           {levelIdx < LEVELS.length - 1 ? (
             <button
-              onClick={() => setLevelIdx(i => i + 1)}
+              onPointerDown={() => setLevelIdx(i => i + 1)}
               style={{
-                marginTop: 8,
-                padding: '12px 32px',
-                background: 'none',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 8,
-                color: '#fff',
-                fontSize: 15,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                letterSpacing: '0.05em',
+                marginTop: 8, padding: '12px 32px',
+                background: 'none', border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 8, color: '#fff', fontSize: 15,
+                cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em',
+                touchAction: 'manipulation',
               }}
-              onPointerEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.6)')}
-              onPointerLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)')}
             >
               Next level →
             </button>
           ) : (
             <button
-              onClick={() => { setLevelIdx(0) }}
+              onPointerDown={() => setLevelIdx(0)}
               style={{
-                marginTop: 8,
-                padding: '12px 32px',
-                background: 'none',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 8,
-                color: 'rgba(255,255,255,0.7)',
-                fontSize: 15,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                letterSpacing: '0.05em',
+                marginTop: 8, padding: '12px 32px',
+                background: 'none', border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 8, color: 'rgba(255,255,255,0.7)', fontSize: 15,
+                cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em',
+                touchAction: 'manipulation',
               }}
-              onPointerEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.6)')}
-              onPointerLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)')}
             >
               Play again
             </button>
