@@ -3,6 +3,7 @@ import GameShell from './GameShell'
 import Constellations from './games/Constellations'
 import ShapeBuilder from './games/ShapeBuilder'
 import Ripples from './games/Ripples'
+import Isomorphism from './games/Isomorphism'
 import './App.css'
 
 const GAMES = [
@@ -45,6 +46,25 @@ const GAMES = [
       </svg>
     ),
   },
+  {
+    id: 'isomorphism',
+    title: 'Isomorphism',
+    description: 'Match graph structure across the sky',
+    icon: (
+      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <circle cx="10" cy="20" r="2" fill="currentColor" />
+        <circle cx="20" cy="10" r="2" fill="currentColor" />
+        <circle cx="30" cy="20" r="2" fill="currentColor" />
+        <line x1="10" y1="20" x2="20" y2="10" stroke="currentColor" strokeWidth="1" />
+        <line x1="20" y1="10" x2="30" y2="20" stroke="currentColor" strokeWidth="1" />
+        <circle cx="14" cy="32" r="2" fill="currentColor" />
+        <circle cx="26" cy="32" r="2" fill="currentColor" />
+        <circle cx="20" cy="24" r="2" fill="currentColor" />
+        <line x1="14" y1="32" x2="20" y2="24" stroke="currentColor" strokeWidth="1" />
+        <line x1="26" y1="32" x2="20" y2="24" stroke="currentColor" strokeWidth="1" />
+      </svg>
+    ),
+  },
 ] as const
 
 type GameId = (typeof GAMES)[number]['id']
@@ -54,6 +74,7 @@ function GameContent({ id }: { id: GameId }) {
     case 'constellations': return <Constellations />
     case 'shape-builder': return <ShapeBuilder />
     case 'ripples': return <Ripples />
+    case 'isomorphism': return <Isomorphism />
   }
 }
 
