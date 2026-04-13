@@ -24,6 +24,25 @@ const GAMES = [
     ),
   },
   {
+    id: 'twin-stars',
+    title: 'Twin Stars',
+    description: 'Match graph structure across the sky',
+    icon: (
+      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <circle cx="10" cy="20" r="2" fill="currentColor" />
+        <circle cx="20" cy="10" r="2" fill="currentColor" />
+        <circle cx="30" cy="20" r="2" fill="currentColor" />
+        <line x1="10" y1="20" x2="20" y2="10" stroke="currentColor" strokeWidth="1" />
+        <line x1="20" y1="10" x2="30" y2="20" stroke="currentColor" strokeWidth="1" />
+        <circle cx="14" cy="32" r="2" fill="currentColor" />
+        <circle cx="26" cy="32" r="2" fill="currentColor" />
+        <circle cx="20" cy="24" r="2" fill="currentColor" />
+        <line x1="14" y1="32" x2="20" y2="24" stroke="currentColor" strokeWidth="1" />
+        <line x1="26" y1="32" x2="20" y2="24" stroke="currentColor" strokeWidth="1" />
+      </svg>
+    ),
+  },
+  {
     id: 'shape-builder',
     title: 'Shape Builder',
     description: 'Construct geometric forms',
@@ -43,25 +62,6 @@ const GAMES = [
         <circle cx="20" cy="20" r="3.5" stroke="currentColor" strokeWidth="1.5" />
         <circle cx="20" cy="20" r="9" stroke="currentColor" strokeWidth="1" />
         <circle cx="20" cy="20" r="15" stroke="currentColor" strokeWidth="0.75" />
-      </svg>
-    ),
-  },
-  {
-    id: 'twin-stars',
-    title: 'Twin Stars',
-    description: 'Match graph structure across the sky',
-    icon: (
-      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
-        <circle cx="10" cy="20" r="2" fill="currentColor" />
-        <circle cx="20" cy="10" r="2" fill="currentColor" />
-        <circle cx="30" cy="20" r="2" fill="currentColor" />
-        <line x1="10" y1="20" x2="20" y2="10" stroke="currentColor" strokeWidth="1" />
-        <line x1="20" y1="10" x2="30" y2="20" stroke="currentColor" strokeWidth="1" />
-        <circle cx="14" cy="32" r="2" fill="currentColor" />
-        <circle cx="26" cy="32" r="2" fill="currentColor" />
-        <circle cx="20" cy="24" r="2" fill="currentColor" />
-        <line x1="14" y1="32" x2="20" y2="24" stroke="currentColor" strokeWidth="1" />
-        <line x1="26" y1="32" x2="20" y2="24" stroke="currentColor" strokeWidth="1" />
       </svg>
     ),
   },
