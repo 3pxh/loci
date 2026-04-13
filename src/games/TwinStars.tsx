@@ -656,33 +656,43 @@ export default function TwinStars() {
         ))}
       </div>
 
-      {/* Level complete */}
-      {complete && (
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'rgba(6,9,26,0.85)', backdropFilter: 'blur(4px)',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 24,
-        }}>
-          <div style={{ fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>
-            {levelIdx >= LEVELS.length - 1 ? 'All structures mapped' : `Level ${levelIdx + 1} of ${LEVELS.length}`}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {game?.groups.map((g, i) => <span key={i} style={{ fontSize: 28, color: g.color }}>✦</span>)}
-          </div>
-          {levelIdx < LEVELS.length - 1 ? (
-            <button onPointerDown={() => setLevelIdx(i => i + 1)}
-              style={{ marginTop: 8, padding: '12px 32px', background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: '#fff', fontSize: 15, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em', touchAction: 'manipulation' }}>
-              Next level →
-            </button>
-          ) : (
-            <button onPointerDown={() => setLevelIdx(0)}
-              style={{ marginTop: 8, padding: '12px 32px', background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: 'rgba(255,255,255,0.7)', fontSize: 15, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em', touchAction: 'manipulation' }}>
-              Play again
-            </button>
-          )}
-        </div>
-      )}
+      {/* Ambient next-level button — fades in on complete */}
+      <style>{`
+        @keyframes nextGlow {
+          0%, 100% { box-shadow: 0 0 10px 2px rgba(52,211,153,0.35); }
+          50%       { box-shadow: 0 0 22px 6px rgba(52,211,153,0.65); }
+        }
+      `}</style>
+      <button
+        onPointerDown={() => {
+          if (!complete) return
+          if (levelIdx < LEVELS.length - 1) {
+            setLevelIdx(i => i + 1)
+          } else {
+            setLevelIdx(0)
+          }
+          setComplete(false)
+        }}
+        style={{
+          position: 'absolute', bottom: 84, right: 20,
+          width: 52, height: 52, borderRadius: '50%',
+          background: complete ? 'rgba(52,211,153,0.18)' : 'transparent',
+          border: complete ? '1px solid rgba(52,211,153,0.5)' : '1px solid transparent',
+          padding: 0,
+          cursor: complete ? 'pointer' : 'default',
+          touchAction: 'manipulation',
+          opacity: complete ? 1 : 0,
+          transition: 'opacity 1s ease, background 0.4s, border-color 0.4s',
+          animation: complete ? 'nextGlow 2.4s ease-in-out infinite' : 'none',
+          pointerEvents: complete ? 'auto' : 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        aria-label="Next level"
+      >
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <path d="M8 4l7 7-7 7" stroke="rgba(52,211,153,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
 
       {showSelect && (
         <LevelSelect
