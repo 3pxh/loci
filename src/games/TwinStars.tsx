@@ -222,12 +222,15 @@ function buildLevel(def: IsoLevelDef, w: number, h: number, levelIdx: number): G
     for (const ci of [0, 1] as const) {
       const scale = def.scale[0] + rng() * (def.scale[1] - def.scale[0])
       const rPx = scale * minDim
+      // Padding ensures no node goes outside MARGIN (layout is normalised to [-0.5, 0.5])
+      const xPad = MARGIN + rPx / w
+      const yPad = MARGIN + rPx / h
 
       // Find non-overlapping placement
       let ncx = 0.5, ncy = 0.5
       for (let att = 0; att < 300; att++) {
-        ncx = MARGIN + rng() * (1 - 2 * MARGIN)
-        ncy = MARGIN + rng() * (1 - 2 * MARGIN)
+        ncx = xPad + rng() * (1 - 2 * xPad)
+        ncy = yPad + rng() * (1 - 2 * yPad)
         const ok = !placed.some(p => {
           const dx = (ncx - p.nx) * w
           const dy = (ncy - p.ny) * h
@@ -235,19 +238,28 @@ function buildLevel(def: IsoLevelDef, w: number, h: number, levelIdx: number): G
         })
         if (ok) break
       }
+      // Safety clamp
+      ncx = Math.max(xPad, Math.min(1 - xPad, ncx))
+      ncy = Math.max(yPad, Math.min(1 - yPad, ncy))
       placed.push({ nx: ncx, ny: ncy, r: rPx / minDim })
 
       // Different seeds → different layouts for the two copies
       const layoutSeed = levelIdx * 2000 + gi * 20 + ci + 1
       const lpos = forceLayout(structIdx, layoutSeed)
 
+      // Random rotation for this copy
+      const angle = rng() * Math.PI * 2
+      const cosA = Math.cos(angle), sinA = Math.sin(angle)
+
       for (let li = 0; li < sdef.n; li++) {
         const lp = lpos[li]
+        const rx = lp.x * cosA - lp.y * sinA
+        const ry = lp.x * sinA + lp.y * cosA
         const id = nextId++
         nodes.push({
           id,
-          nx: ncx + lp.x * rPx * 2 / w,
-          ny: ncy + lp.y * rPx * 2 / h,
+          nx: Math.max(MARGIN, Math.min(1 - MARGIN, ncx + rx * rPx * 2 / w)),
+          ny: Math.max(MARGIN, Math.min(1 - MARGIN, ncy + ry * rPx * 2 / h)),
           rMult: 0.88 + rng() * 0.28,
           twinkleDelay: rng() * -5,
           groupId: gi,
@@ -297,36 +309,16 @@ function buildLevel(def: IsoLevelDef, w: number, h: number, levelIdx: number): G
 
 function applyMatch(state: GameState, gId: number, local0: number, local1: number): GameState {
   const group = state.groups.find(g => g.id === gId)!
-  const newIsos = group.isos.filter(iso => iso[local0] === local1)
-  const newMatched = new Map(group.matched)
-  newMatched.set(local0, local1)
-  const newGroup = { ...group, isos: newIsos, matched: newMatched }
+  const validIsos = group.isos.filter(iso => iso[local0] === local1)
+  if (validIsos.length === 0) return state
+  // One valid pair immediately solves the whole group using the first consistent automorphism
+  const iso = validIsos[0]
+  const n = STRUCTS[group.structIdx].n
+  const newMatched = new Map<number, number>()
+  for (let i = 0; i < n; i++) newMatched.set(i, iso[i])
+  const newGroup = { ...group, isos: validIsos, matched: newMatched }
   const newGroups = state.groups.map(g => g.id === gId ? newGroup : g)
   return { ...state, groups: newGroups, pending: null }
-}
-
-function autoComplete(state: GameState): GameState {
-  let cur = state
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const group of cur.groups) {
-      if (group.isos.length === 0) continue
-      const n = STRUCTS[group.structIdx].n
-      for (let l0 = 0; l0 < n; l0++) {
-        if (group.matched.has(l0)) continue
-        const targets = new Set(group.isos.map(iso => iso[l0]))
-        if (targets.size === 1) {
-          const l1 = [...targets][0]
-          cur = applyMatch(cur, group.id, l0, l1)
-          changed = true
-          break
-        }
-      }
-      if (changed) break
-    }
-  }
-  return cur
 }
 
 // ── Group thumbnail ───────────────────────────────────────
@@ -424,7 +416,7 @@ function LevelSelect({ current, onSelect, onClose }: {
 
 // ── Main component ────────────────────────────────────────
 
-export default function Isomorphism() {
+export default function TwinStars() {
   const [levelIdx, setLevelIdx] = useState(0)
   const [svgSize, setSvgSize] = useState({ w: 0, h: 0 })
   const [game, setGame] = useState<GameState | null>(null)
@@ -508,8 +500,7 @@ export default function Isomorphism() {
       const valid = group.isos.some(iso => iso[local0] === local1)
       if (!valid) return { ...prev, flashError: true }
 
-      const updated = applyMatch(prev, group.id, local0, local1)
-      return autoComplete(updated)
+      return applyMatch(prev, group.id, local0, local1)
     })
   }, [w, h])
 
@@ -581,20 +572,21 @@ export default function Isomorphism() {
           .star-vis { animation: twinkle 3s ease-in-out infinite; }
         `}</style>
 
-        {/* Structure edges */}
+        {/* Structure edges — only visible once the group is solved */}
         {game?.edges.map((edge, i) => {
           const fn = nodeById.get(edge.fromId)
           const tn = nodeById.get(edge.toId)
           if (!fn || !tn) return null
           const group = nodeToGroup.get(edge.fromId)
           const solved = group && group.matched.size === STRUCTS[group.structIdx].n
+          if (!solved) return null
           return (
             <line key={i}
               x1={fn.nx * w} y1={fn.ny * h}
               x2={tn.nx * w} y2={tn.ny * h}
-              stroke={solved ? group!.color + 'aa' : 'rgba(255,255,255,0.18)'}
-              strokeWidth={solved ? 1.2 : 0.8}
-              style={{ pointerEvents: 'none', transition: 'stroke 0.4s' }}
+              stroke={group!.color + 'aa'}
+              strokeWidth={1.2}
+              style={{ pointerEvents: 'none' }}
             />
           )
         })}

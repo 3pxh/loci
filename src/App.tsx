@@ -3,7 +3,7 @@ import GameShell from './GameShell'
 import Constellations from './games/Constellations'
 import ShapeBuilder from './games/ShapeBuilder'
 import Ripples from './games/Ripples'
-import Isomorphism from './games/Isomorphism'
+import TwinStars from './games/TwinStars'
 import './App.css'
 
 const GAMES = [
@@ -47,8 +47,8 @@ const GAMES = [
     ),
   },
   {
-    id: 'isomorphism',
-    title: 'Isomorphism',
+    id: 'twin-stars',
+    title: 'Twin Stars',
     description: 'Match graph structure across the sky',
     icon: (
       <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
@@ -74,7 +74,7 @@ function GameContent({ id }: { id: GameId }) {
     case 'constellations': return <Constellations />
     case 'shape-builder': return <ShapeBuilder />
     case 'ripples': return <Ripples />
-    case 'isomorphism': return <Isomorphism />
+    case 'twin-stars': return <TwinStars />
   }
 }
 
