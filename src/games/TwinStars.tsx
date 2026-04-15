@@ -2,9 +2,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 // ── Config ────────────────────────────────────────────────
 
-const STAR_R = 5
-const HIT_R = 22
-const SEL_RING = 12
+const STAR_R = 7
+const HIT_R = 38
+const SEL_RING = 16
 const SKY = '#06091a'
 const GROUP_COLORS = ['#4adecd', '#a78bfa', '#fbbf24', '#f87171', '#34d399', '#60a5fa', '#fb923c']
 const MARGIN = 0.08
@@ -140,21 +140,21 @@ interface IsoLevelDef {
 
 const LEVELS: IsoLevelDef[] = [
   // ── Tutorial: 1 group, no noise ────────────────────────────────────────────
-  { groups: [0],           scale: [0.09, 0.11], noise: 0,  fadeRange: [999,9999], fadeDuration: 1  },
-  { groups: [1],           scale: [0.09, 0.11], noise: 0,  fadeRange: [999,9999], fadeDuration: 1  },
-  { groups: [3],           scale: [0.10, 0.13], noise: 0,  fadeRange: [999,9999], fadeDuration: 1  },
+  { groups: [0],           scale: [0.13, 0.16], noise: 0,  fadeRange: [999,9999], fadeDuration: 1  },
+  { groups: [1],           scale: [0.13, 0.16], noise: 0,  fadeRange: [999,9999], fadeDuration: 1  },
+  { groups: [3],           scale: [0.14, 0.18], noise: 0,  fadeRange: [999,9999], fadeDuration: 1  },
   // ── 2 groups ────────────────────────────────────────────────────────────────
-  { groups: [0, 1],        scale: [0.09, 0.13], noise: 10, fadeRange: [50, 100],  fadeDuration: 12 },
-  { groups: [2, 3],        scale: [0.10, 0.15], noise: 15, fadeRange: [45,  95],  fadeDuration: 12 },
-  { groups: [4, 5],        scale: [0.10, 0.16], noise: 20, fadeRange: [40,  90],  fadeDuration: 14 },
+  { groups: [0, 1],        scale: [0.13, 0.18], noise: 10, fadeRange: [50, 100],  fadeDuration: 12 },
+  { groups: [2, 3],        scale: [0.14, 0.20], noise: 15, fadeRange: [45,  95],  fadeDuration: 12 },
+  { groups: [4, 5],        scale: [0.14, 0.21], noise: 20, fadeRange: [40,  90],  fadeDuration: 14 },
   // ── 3 groups ────────────────────────────────────────────────────────────────
-  { groups: [0, 1, 3],     scale: [0.10, 0.17], noise: 25, fadeRange: [40,  90],  fadeDuration: 14 },
-  { groups: [2, 5, 7],     scale: [0.11, 0.20], noise: 30, fadeRange: [35,  85],  fadeDuration: 14 },
-  { groups: [6, 7, 8],     scale: [0.11, 0.22], noise: 35, fadeRange: [35,  80],  fadeDuration: 15 },
+  { groups: [0, 1, 3],     scale: [0.14, 0.22], noise: 25, fadeRange: [40,  90],  fadeDuration: 14 },
+  { groups: [2, 5, 7],     scale: [0.15, 0.25], noise: 30, fadeRange: [35,  85],  fadeDuration: 14 },
+  { groups: [6, 7, 8],     scale: [0.15, 0.27], noise: 35, fadeRange: [35,  80],  fadeDuration: 15 },
   // ── 4–6 groups ──────────────────────────────────────────────────────────────
-  { groups: [0, 3, 5, 9],          scale: [0.11, 0.22], noise: 40, fadeRange: [30, 80], fadeDuration: 15 },
-  { groups: [1, 3, 6, 7, 10],      scale: [0.12, 0.25], noise: 50, fadeRange: [30, 80], fadeDuration: 16 },
-  { groups: [2, 4, 6, 8, 10, 11],  scale: [0.12, 0.27], noise: 60, fadeRange: [30, 80], fadeDuration: 18 },
+  { groups: [0, 3, 5, 9],          scale: [0.15, 0.27], noise: 40, fadeRange: [30, 80], fadeDuration: 15 },
+  { groups: [1, 3, 6, 7, 10],      scale: [0.16, 0.30], noise: 50, fadeRange: [30, 80], fadeDuration: 16 },
+  { groups: [2, 4, 6, 8, 10, 11],  scale: [0.16, 0.32], noise: 60, fadeRange: [30, 80], fadeDuration: 18 },
 ]
 
 const LEVEL_GROUPS_META = [
@@ -451,6 +451,7 @@ export default function TwinStars() {
   const { w, h } = svgSize
 
   const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!e.isPrimary) return   // ignore extra touch points / palm contacts
     e.preventDefault()
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
     const px = e.clientX - rect.left
