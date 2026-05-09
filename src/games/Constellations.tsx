@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 
 // ── Config ────────────────────────────────────────────────
 
-const STAR_R   = 5
-const HIT_R    = 24
-const SEL_RING = 13
-const MARGIN   = 0.09
+const STAR_R        = 5
+const HIT_R         = 24
+const SEL_RING      = 13
+const MARGIN        = 0.09
+const NOISE_CLEAR_R = 50   // min px distance from any constellation star
+const SCALE_MAX     = 0.26 // max polygon radius as fraction of min(w,h)
 
 const SKY        = '#0e1a27'
 const INK        = [238, 218, 160] as const
@@ -213,7 +215,7 @@ function buildLevel(def: LevelDef, w: number, h: number, levelIdx: number): Leve
       const sides = shapeDef.sides ?? 3
 
       for (let attempt = 0; attempt < 300; attempt++) {
-        const nRadius = def.scaleMin + rng() * (def.scaleMax - def.scaleMin)
+        const nRadius = Math.min(def.scaleMin + rng() * (def.scaleMax - def.scaleMin), SCALE_MAX)
         const rPx = nRadius * minDim
         const ncx = MARGIN + rng() * (1 - 2 * MARGIN)
         const ncy = MARGIN + rng() * (1 - 2 * MARGIN)
@@ -252,7 +254,7 @@ function buildLevel(def: LevelDef, w: number, h: number, levelIdx: number): Leve
     for (let att = 0; att < 30; att++) {
       nx = 0.03 + rng() * 0.94
       ny = 0.03 + rng() * 0.94
-      if (!cStars.some(s => Math.hypot((nx - s.nx) * w, (ny - s.ny) * h) < STAR_R * 2.5)) break
+      if (!cStars.some(s => Math.hypot((nx - s.nx) * w, (ny - s.ny) * h) < NOISE_CLEAR_R)) break
     }
     noiseStars.push({
       id: nextId++, nx, ny,
