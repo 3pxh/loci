@@ -4,6 +4,7 @@ import Constellations from './games/Constellations'
 import ShapeBuilder from './games/ShapeBuilder'
 import Ripples from './games/Ripples'
 import TwinStars from './games/TwinStars'
+import Persistence from './games/Persistence'
 import './App.css'
 
 const GAMES = [
@@ -65,6 +66,24 @@ const GAMES = [
       </svg>
     ),
   },
+  {
+    id: 'persistence',
+    title: 'Persistence',
+    description: 'Find the stars that never fade',
+    icon: (
+      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <circle cx="20" cy="20" r="2.5" fill="currentColor" />
+        <circle cx="8" cy="12" r="1" fill="currentColor" opacity="0.4" />
+        <circle cx="32" cy="10" r="1.2" fill="currentColor" opacity="0.3" />
+        <circle cx="6" cy="28" r="1" fill="currentColor" opacity="0.5" />
+        <circle cx="34" cy="30" r="0.8" fill="currentColor" opacity="0.35" />
+        <circle cx="14" cy="34" r="1.1" fill="currentColor" opacity="0.4" />
+        <circle cx="28" cy="8" r="0.9" fill="currentColor" opacity="0.45" />
+        <circle cx="36" cy="20" r="1" fill="currentColor" opacity="0.3" />
+        <circle cx="10" cy="22" r="1.2" fill="currentColor" opacity="0.35" />
+      </svg>
+    ),
+  },
 ] as const
 
 type GameId = (typeof GAMES)[number]['id']
@@ -75,6 +94,7 @@ function GameContent({ id }: { id: GameId }) {
     case 'shape-builder': return <ShapeBuilder />
     case 'ripples': return <Ripples />
     case 'twin-stars': return <TwinStars />
+    case 'persistence': return <Persistence />
   }
 }
 
