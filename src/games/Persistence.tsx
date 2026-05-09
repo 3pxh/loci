@@ -2,9 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 // ── Config ────────────────────────────────────────────────
 
-const SKY = '#06091a'
+const SKY        = '#0e1a27'
+const INK        = [238, 218, 160] as const
+const BORDER_CLR = 'rgba(180, 152, 95, 0.65)'
+const GRID_CLR   = 'rgba(110, 140, 175, 0.10)'
+const BORDER_PAD = 20
+const TICK_STEP  = 38
+const TICK_LEN   = 5
 const STAR_COUNT = 20
-const HIT_R = 28
+const HIT_R      = 28
+
+const GREEK = ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']
+
+const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII']
 
 function levelPersistentCount(level: number) {
   return Math.min(3 + level, 12)
@@ -16,30 +26,118 @@ interface Star {
   x: number
   y: number
   size: number
+  label: string
   persistent: boolean
   collected: boolean
-  phase: number   // radians
-  period: number  // seconds
-  collectTime: number | null  // ms
+  phase: number
+  period: number
+  collectTime: number | null
+}
+
+// ── Draw helpers ──────────────────────────────────────────
+
+function ink(a: number) {
+  return `rgba(${INK[0]},${INK[1]},${INK[2]},${a.toFixed(3)})`
+}
+
+function drawStarGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, opacity: number) {
+  const col = ink(opacity)
+  ctx.strokeStyle = col
+  ctx.lineCap = 'round'
+
+  // cardinal spikes
+  const mainLen = size * 4.5
+  ctx.lineWidth = Math.max(0.4, size * 0.42)
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + Math.cos(a) * mainLen, y + Math.sin(a) * mainLen)
+    ctx.stroke()
+  }
+
+  // diagonal spikes
+  const diagLen = size * 2.8
+  ctx.lineWidth = Math.max(0.3, size * 0.28)
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI / 4 + i * Math.PI / 2
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + Math.cos(a) * diagLen, y + Math.sin(a) * diagLen)
+    ctx.stroke()
+  }
+
+  // core disc
+  ctx.fillStyle = col
+  ctx.beginPath()
+  ctx.arc(x, y, size * 0.85, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const pad = BORDER_PAD + 7
+  ctx.strokeStyle = GRID_CLR
+  ctx.lineWidth = 0.5
+  const cols = 8, rows = 6
+  for (let i = 0; i <= cols; i++) {
+    const x = pad + (w - pad * 2) * i / cols
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, h - pad); ctx.stroke()
+  }
+  for (let i = 0; i <= rows; i++) {
+    const y = pad + (h - pad * 2) * i / rows
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke()
+  }
+}
+
+function drawBorder(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const b = BORDER_PAD
+  ctx.strokeStyle = BORDER_CLR
+
+  // outer rule
+  ctx.lineWidth = 1
+  ctx.strokeRect(b, b, w - b * 2, h - b * 2)
+
+  // inner rule
+  const b2 = b + 5
+  ctx.lineWidth = 0.5
+  ctx.strokeRect(b2, b2, w - b2 * 2, h - b2 * 2)
+
+  // tick marks pointing inward from outer rule
+  ctx.lineWidth = 0.75
+  for (let x = b + TICK_STEP; x < w - b; x += TICK_STEP) {
+    ctx.beginPath(); ctx.moveTo(x, b); ctx.lineTo(x, b + TICK_LEN); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(x, h - b); ctx.lineTo(x, h - b - TICK_LEN); ctx.stroke()
+  }
+  for (let y = b + TICK_STEP; y < h - b; y += TICK_STEP) {
+    ctx.beginPath(); ctx.moveTo(b, y); ctx.lineTo(b + TICK_LEN, y); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(w - b, y); ctx.lineTo(w - b - TICK_LEN, y); ctx.stroke()
+  }
+}
+
+function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.8)
+  g.addColorStop(0, 'rgba(0,0,0,0)')
+  g.addColorStop(1, 'rgba(0,0,0,0.4)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, w, h)
 }
 
 // ── Helpers ───────────────────────────────────────────────
 
 function makeStars(level: number, w: number, h: number): Star[] {
   const nP = levelPersistentCount(level)
-  return Array.from({ length: STAR_COUNT }, (_, i) => {
-    const persistent = i < nP
-    return {
-      x: 24 + Math.random() * (w - 48),
-      y: 24 + Math.random() * (h - 48),
-      size: 1.4 + Math.random() * 1.6,
-      persistent,
-      collected: false,
-      phase: Math.random() * Math.PI * 2,
-      period: 2.5 + Math.random() * 5,
-      collectTime: null,
-    }
-  })
+  const margin = BORDER_PAD + 30
+  return Array.from({ length: STAR_COUNT }, (_, i) => ({
+    x: margin + Math.random() * (w - margin * 2),
+    y: margin + Math.random() * (h - margin * 2),
+    size: 1.4 + Math.random() * 1.6,
+    label: GREEK[i % GREEK.length],
+    persistent: i < nP,
+    collected: false,
+    phase: Math.random() * Math.PI * 2,
+    period: 2.5 + Math.random() * 5,
+    collectTime: null,
+  }))
 }
 
 // ── Component ─────────────────────────────────────────────
@@ -82,22 +180,31 @@ export default function Persistence() {
       ctx.fillStyle = SKY
       ctx.fillRect(0, 0, w, h)
 
+      drawGrid(ctx, w, h)
+
+      ctx.font = `italic 10px Georgia, "Times New Roman", serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+
       for (const star of stars) {
-        // Collect burst
         if (star.collected) {
           if (star.collectTime !== null) {
             const age = (nowMs - star.collectTime) / 1000
-            const D = 0.8
+            const D = 1.0
             if (age < D) {
-              for (let ring = 0; ring < 3; ring++) {
-                const rt = Math.max(0, (age / D) - ring * 0.12)
-                if (rt <= 0) continue
-                const r = star.size + rt * 22
-                const a = (1 - rt) * 0.75
+              const t = age / D
+              const maxLen = 28
+              const a = (1 - t) * 0.65
+              ctx.strokeStyle = ink(a)
+              ctx.lineWidth = 0.75
+              ctx.lineCap = 'round'
+              for (let i = 0; i < 4; i++) {
+                const angle = i * Math.PI / 2
+                const inner = star.size + t * maxLen * 0.2
+                const outer = star.size + t * maxLen
                 ctx.beginPath()
-                ctx.arc(star.x, star.y, r, 0, Math.PI * 2)
-                ctx.strokeStyle = `rgba(255, 215, 90, ${a.toFixed(2)})`
-                ctx.lineWidth = 1.5 * (1 - rt)
+                ctx.moveTo(star.x + Math.cos(angle) * inner, star.y + Math.sin(angle) * inner)
+                ctx.lineTo(star.x + Math.cos(angle) * outer, star.y + Math.sin(angle) * outer)
                 ctx.stroke()
               }
             }
@@ -118,15 +225,19 @@ export default function Persistence() {
 
         if (opacity < 0.01) continue
 
-        ctx.beginPath()
-        ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(190, 210, 255, ${opacity.toFixed(3)})`
-        ctx.fill()
+        drawStarGlyph(ctx, star.x, star.y, star.size, opacity)
+
+        if (opacity * 0.55 > 0.05) {
+          ctx.fillStyle = ink(opacity * 0.55)
+          ctx.fillText(star.label, star.x + star.size * 5 + 3, star.y + star.size * 3)
+        }
       }
 
+      drawVignette(ctx, w, h)
+      drawBorder(ctx, w, h)
+
       if (levelComplete && !state.buttonShown) {
-        const elapsed = nowSec - levelCompleteTime
-        if (elapsed > 1.8) {
+        if (nowSec - levelCompleteTime > 1.8) {
           state.buttonShown = true
           setShowButton(true)
         }
@@ -197,38 +308,51 @@ export default function Persistence() {
           position: 'absolute',
           inset: 0,
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 14,
           pointerEvents: 'none',
         }}>
-          <span style={{
-            fontFamily: 'system-ui, sans-serif',
-            fontSize: 13,
-            letterSpacing: '0.18em',
-            textTransform: 'uppercase',
-            color: 'rgba(255, 235, 150, 0.7)',
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 14,
+            padding: '24px 40px',
+            background: 'rgba(14, 26, 39, 0.9)',
+            border: '1px solid rgba(180, 152, 95, 0.65)',
+            outline: '4px solid rgba(14, 26, 39, 0.9)',
+            outlineOffset: '-8px',
+            boxShadow: 'inset 0 0 0 1px rgba(180, 152, 95, 0.25)',
           }}>
-            Level {displayLevel + 1} complete
-          </span>
-          <button
-            onClick={handleNextLevel}
-            style={{
-              pointerEvents: 'all',
-              background: 'transparent',
-              border: '1px solid rgba(255, 235, 150, 0.45)',
-              color: 'rgba(255, 235, 150, 0.9)',
-              padding: '11px 28px',
-              fontSize: 15,
-              fontFamily: 'system-ui, sans-serif',
-              letterSpacing: '0.06em',
-              borderRadius: 6,
-              cursor: 'pointer',
-            }}
-          >
-            Next level →
-          </button>
+            <span style={{
+              fontFamily: 'Georgia, "Times New Roman", serif',
+              fontStyle: 'italic',
+              fontSize: 11,
+              letterSpacing: '0.24em',
+              textTransform: 'uppercase',
+              color: 'rgba(180, 152, 95, 0.8)',
+            }}>
+              Observatum · Charta {ROMAN[displayLevel] ?? displayLevel + 1}
+            </span>
+            <button
+              onClick={handleNextLevel}
+              style={{
+                pointerEvents: 'all',
+                background: 'transparent',
+                border: '1px solid rgba(180, 152, 95, 0.5)',
+                color: 'rgba(238, 218, 160, 0.9)',
+                padding: '9px 24px',
+                fontSize: 13,
+                fontFamily: 'Georgia, "Times New Roman", serif',
+                fontStyle: 'italic',
+                letterSpacing: '0.1em',
+                borderRadius: 0,
+                cursor: 'pointer',
+              }}
+            >
+              Charta Sequens →
+            </button>
+          </div>
         </div>
       )}
     </div>
